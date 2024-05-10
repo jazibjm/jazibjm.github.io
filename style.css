@@ -13,11 +13,12 @@
 }
 .title
 {
-    color: var(--textcolor);
     text-align: center;
     margin-bottom: -25px !important;
     font-size: 100px;
     background-color: var(--bgcolor);
+    color: var(--textcolor);
+    text-shadow: 0 0 2px #787878, 0 0 5px #787878, 0 0 7px #787878, 0 0 9px #787878,0 0 10px #787878;
     
 }
 .title2
@@ -27,6 +28,8 @@
     margin-bottom: -1px;
     font-size: 100px;
     background-color: var(--bgcolor);
+    text-shadow: 0 0 2px #787878, 0 0 5px #787878, 0 0 7px #787878, 0 0 9px #787878,0 0 10px #787878;
+
 }
 .topbar
 {
