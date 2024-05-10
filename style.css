@@ -1,0 +1,229 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');
+:root
+{
+    --bgcolor: #000000;
+    --textcolor: #cecece;
+    --navbar: rgb(24, 24, 24);
+}
+*
+{
+    margin:0;
+    font-family: Poppins;
+    background-color:rgb(47, 47, 47);
+}
+.title
+{
+    color: var(--textcolor);
+    text-align: center;
+    margin-bottom: -25px !important;
+    font-size: 100px;
+    background-color: var(--bgcolor);
+    
+}
+.title2
+{
+    color: var(--textcolor);
+    text-align: center;
+    margin-bottom: -1px;
+    font-size: 100px;
+    background-color: var(--bgcolor);
+}
+.topbar
+{
+    background-color: var(--bgcolor);
+    padding: 25px;
+}
+.navbar 
+{
+    text-align: center;
+    padding-top: 20px;
+    padding-bottom: 20px;
+    background-color: var(--navbar);
+}
+.navbar a
+{
+    text-decoration: none;
+    color:var(--textcolor);
+    margin-left: 30px;
+    margin-right: 30px;
+    background-color: var(--navbar);
+
+}
+.navbar a:hover {
+    color: #ffffff;
+    text-shadow:0px 0px 30px var(--textcolor);
+    -moz-transition: all 0.2s ease-in;
+    -o-transition: all 0.2s ease-in;
+    -webkit-transition: all 0.2s ease-in;
+    transition: all 0.2s ease-in;
+    background-color: var(--navbar);
+
+}
+.main
+{
+    text-align: center;
+
+
+}
+.main p, a, ul {
+    color: var(--bgcolor);
+    margin-top: 10px;
+}
+h2
+{
+    color: var(--bgcolor);
+    font-size: 30px;
+}
+ul, ol {
+    text-align: center;
+    list-style-position: inside;
+}
+footer {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+}
+footer a {
+    color: var(--textcolor);
+    text-decoration: none;
+    font-size: 14px;
+}
+.subtitle
+{
+    text-align: center;
+    color: rgb(159, 159, 159);
+    background-color: var(--bgcolor);
+    margin-top: 0px !important;
+}
+.cars
+{
+    border-radius: 25px;
+    margin: 10px;
+}
+img
+{
+    border: solid;
+}
+.aboutme
+{
+    background-color: var(--bgcolor);
+    margin: auto;
+    width: 60%; 
+    border-radius: 40px;
+    padding: 15px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+}
+.aboutme p, .aboutme ol, .aboutme li
+{
+    color: var(--textcolor);
+    background-color: var(--bgcolor);
+    padding-left: 0;
+}
+.aboutme img {
+    border-radius: 40px;
+    margin-top: 10px;
+}
+.smalltext{
+    
+    font-size: 8px;
+    margin-top: 0px !important;
+}
+.homepage
+{
+    background-color: var(--bgcolor);
+    margin: auto;
+    width: 60%; 
+    border-radius: 40px;
+    padding: 15px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+}
+.homepage p, .homepage ol, .homepage li, .homepage ul, .homepage h2
+{
+    color: var(--textcolor);
+    background-color: var(--bgcolor);
+    padding-left: 0;
+}
+.project
+{
+    background-color: var(--bgcolor);
+    padding-top: 15px;
+    padding-bottom: 15px;
+    margin-top: 20px;
+    width: 409px;
+    border-radius: 30px;
+    height: 320px;
+    display: inline-block;
+    margin-left: 20px;
+    margin-right: 20px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+.project h2
+{
+    border-radius: 30px;
+    color: var(--textcolor);
+    background-color: var(--bgcolor);
+    margin-top: 0px !important;
+}
+.project img
+{
+    border: none;
+    width: 100%;
+    display: inline-block;
+    height: 221px;
+}
+.project p, .certification p
+{
+    color: var(--textcolor);
+    border-radius: 30px;
+    background-color: var(--bgcolor);
+}
+.certification
+{
+    background-color: var(--bgcolor);
+    padding-top: 15px;
+    padding-bottom: 15px;
+    margin-top: 20px;
+    width: 409px;
+    border-radius: 30px;
+    height: 315px;
+    display: inline-block !important;
+    margin-left: 20px;
+    text-align: center;
+    margin-right: 20px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+.certification img
+{
+    background-color: var(--bgcolor);
+    border: none;
+    display: flex;
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom:15px;
+    height: 75%;
+}
+
+.certification p
+{
+    border-radius: 100px;
+    font-size: 24px;
+}
+.main p
+{
+    color: var(--textcolor);
+    margin-top: 10px;
+}
+.aboutme p, .aboutme li
+{
+    font-size: 20px;
+}
+.main h2
+{
+    color: var(--textcolor);
+    margin-top: 15px;
+}
