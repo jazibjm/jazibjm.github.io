@@ -22,10 +22,9 @@ export const projects = [
   },
   {
     name: 'Daily Tech Digest',
-    status: 'in progress',
     tags: ['Python', 'FastAPI', 'PostgreSQL', 'OpenAI', 'Next.js'],
     desc: "An automated daily pipeline that pulls the day's top tech stories, summarizes them with the OpenAI API into topic categories, and delivers a clean digest to Discord and a Next.js dashboard — stored in Postgres and fully hands-off on a cron job.",
-    link: 'https://github.com/jazibjm/',
+    link: 'https://github.com/jazibjm/dailydigest',
   },
   {
     name: 'AI Math Problem Generator',
