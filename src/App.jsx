@@ -16,7 +16,7 @@ const MONO = "'JetBrains Mono', monospace"
 const GROTESK = "'Space Grotesk', sans-serif"
 
 // CRT / boot config — mirrors the design's props (scanlines, flicker, startMode).
-const CONFIG = { scanlines: true, flicker: true, startMode: 'terminal' }
+const CONFIG = { scanlines: true, flicker: true, startMode: 'gui' }
 
 const BANNER = `     ██╗ █████╗ ███████╗██╗██████╗
      ██║██╔══██╗╚══███╔╝██║██╔══██╗
@@ -42,6 +42,40 @@ function initialMode() {
     if (s) return s
   } catch (e) {}
   return CONFIG.startMode
+}
+
+// GUI colour palettes. `terminal` is the green CRT look; `pro` is a clean,
+// modern slate/blue scheme. Same keys so the GUI renders from either.
+const THEMES = {
+  terminal: {
+    label: 'Terminal',
+    bg: '#060807', navBg: 'rgba(5,8,6,.82)', surface: '#0a0f0b', termBg: '#000810',
+    border: '#14241a', borderMid: '#16331f', borderAccent: '#2a5a38', warnBorder: '#5a4a18',
+    heading: '#eafff0', bright: '#cfeedb', text: '#9fd3b0', textSoft: '#8fbf9f',
+    muted: '#6f9c80', dim: '#1c7a3c', accent: '#2fd968', accentBright: '#74ffa6',
+    onAccent: '#04140a', warn: '#e0b341', chipBg: 'rgba(20,40,24,.4)', surfaceHover: '#0c1410',
+    certGlow: '0 0 16px rgba(47,217,104,.4)', starGlow: '0 0 12px rgba(47,217,104,.5)',
+    termGlow: '0 0 6px rgba(60,255,120,.35)',
+  },
+  pro: {
+    label: 'Professional',
+    bg: '#0a0e17', navBg: 'rgba(10,14,23,.85)', surface: '#121826', termBg: '#0d131f',
+    border: '#1e2636', borderMid: '#273145', borderAccent: '#33415c', warnBorder: '#5a4a2a',
+    heading: '#f1f5f9', bright: '#dde5f0', text: '#9aa6b8', textSoft: '#8893a5',
+    muted: '#64748b', dim: '#5b6b80', accent: '#5b8def', accentBright: '#84a9ff',
+    onAccent: '#0a0e17', warn: '#e0a83a', chipBg: 'rgba(40,52,74,.45)', surfaceHover: '#172033',
+    certGlow: 'none', starGlow: 'none', termGlow: 'none',
+  },
+}
+
+// Display settings — persisted so the visitor's choice sticks across visits.
+const DEFAULT_SETTINGS = { scanlines: true, flicker: true, glow: true, readable: false, theme: 'terminal' }
+function loadSettings() {
+  try {
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem('jm_settings') || '{}') }
+  } catch (e) {
+    return { ...DEFAULT_SETTINGS }
+  }
 }
 
 // Reveal `text` one character at a time while `active` is true; when inactive,
@@ -93,12 +127,22 @@ export default function App() {
   const cmdHistory = useRef([])
   const histIndex = useRef(0)
 
+  const promptFor = (dir) => 'jazib@ctf:' + (dir === 'projects' ? '~/projects' : '~') + '$'
   const outputEntry = (html) => ({ id: ++uid.current, isOutput: true, html: { __html: html } })
-  const inputEntry = (text) => ({ id: ++uid.current, isInput: true, prompt: 'jazib@ctf:~$', text })
+  const inputEntry = (text, dir) => ({ id: ++uid.current, isInput: true, prompt: promptFor(dir), text })
 
   const [mode, setMode] = useState(initialMode)
   const [input, setInput] = useState('')
   const [history, setHistory] = useState([])
+  const [cwd, setCwd] = useState('~') // '~' or 'projects'
+  const [settings, setSettings] = useState(loadSettings)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('jm_settings', JSON.stringify(settings))
+    } catch (e) {}
+  }, [settings])
 
   // Typewriter boot sequence — only when terminal is the entry mode.
   const [booting, setBooting] = useState(() => initialMode() === 'terminal')
@@ -150,14 +194,26 @@ export default function App() {
     window.scrollTo(0, 0)
   }
   const goGui = () => goToMode('gui')
-  const goTerminal = () => goToMode('terminal')
+  // Replay the boot typing animation every time the terminal is opened.
+  const goTerminal = () => {
+    setHistory([])
+    setCwd('~')
+    setBooting(true)
+    setBootLine(0)
+    setBootChar(0)
+    goToMode('terminal')
+  }
 
-  const runCommand = (raw) => {
+  // `dirOverride` lets shortcut chips run from home (~) regardless of the
+  // current directory, so they never break inside projects/.
+  const runCommand = (raw, dirOverride) => {
+    const dir = dirOverride != null ? dirOverride : cwd
     const cmd = (raw || '').trim()
-    const inEntry = inputEntry(cmd)
+    const inEntry = inputEntry(cmd, dir)
     if (cmd !== '') cmdHistory.current.push(cmd)
     histIndex.current = cmdHistory.current.length
     const base = cmd.toLowerCase().split(/\s+/)[0]
+    if (dirOverride != null && dirOverride !== cwd) setCwd(dirOverride)
 
     if (base === 'clear') {
       setHistory([])
@@ -173,8 +229,14 @@ export default function App() {
       setTimeout(() => goToMode('gui'), 650)
       return
     }
-    const out = outputEntry(commandOutput(cmd.toLowerCase()).html)
-    setHistory((h) => [...h, inEntry, out])
+    const result = commandOutput(cmd.toLowerCase(), dir)
+    if (result.cd !== undefined) {
+      setCwd(result.cd) // `cd` changes directory and prints nothing
+      setHistory((h) => [...h, inEntry])
+      setInput('')
+      return
+    }
+    setHistory((h) => [...h, inEntry, outputEntry(result.html)])
     setInput('')
   }
 
@@ -201,15 +263,30 @@ export default function App() {
   // Hero name types itself out each time the GUI mode is shown.
   const heroName = useTypewriter('Jazib Malik', mode === 'gui', 95)
 
-  const chips = ['help', 'about', 'projects', 'skills', 'experience', 'education', 'certs', 'honors', 'contact', 'gui']
+  // Each content shortcut maps to a `cat <file>`; all run from home (~).
+  const chips = [
+    { label: 'help', cmd: 'help' },
+    { label: 'about', cmd: 'cat about.txt' },
+    { label: 'projects', cmd: 'cat projects/*.txt' },
+    { label: 'skills', cmd: 'cat skills.txt' },
+    { label: 'experience', cmd: 'cat experience.log' },
+    { label: 'education', cmd: 'cat education.txt' },
+    { label: 'certs', cmd: 'cat certs.md' },
+    { label: 'honors', cmd: 'cat honors.txt' },
+    { label: 'contact', cmd: 'cat contact.txt' },
+    { label: 'gui', cmd: 'gui' },
+  ]
   const projectsView = projects.map((p, i) => ({
     ...p,
     num: String(i + 1).padStart(2, '0'),
     isInProgress: p.status === 'in progress',
   }))
 
+  const th = THEMES[settings.theme] || THEMES.terminal
+
   return (
     <div
+      className={settings.glow ? undefined : 'no-glow'}
       style={{
         position: 'relative',
         minHeight: '100vh',
@@ -221,7 +298,7 @@ export default function App() {
     >
       {/* ================= TERMINAL MODE ================= */}
       {mode === 'terminal' && (
-        <div style={{ minHeight: '100vh', padding: isMobile ? '14px 9px 26px' : '34px 18px 40px', textShadow: '0 0 6px rgba(60,255,120,.4)' }}>
+        <div className={settings.readable ? 'readable' : undefined} style={{ minHeight: '100vh', padding: isMobile ? '14px 9px 26px' : '34px 18px 40px', textShadow: '0 0 6px rgba(60,255,120,.4)' }}>
           <div
             style={{
               maxWidth: 1080,
@@ -338,7 +415,7 @@ export default function App() {
 
               {/* live prompt — hidden until the boot sequence finishes */}
               <div style={{ display: booting ? 'none' : 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-                <span style={{ color: '#74ffa6', whiteSpace: 'nowrap' }}>jazib@ctf:~$</span>
+                <span style={{ color: '#74ffa6', whiteSpace: 'nowrap' }}>{promptFor(cwd)}</span>
                 <input
                   ref={inputRef}
                   value={input}
@@ -380,8 +457,8 @@ export default function App() {
             <span style={{ fontSize: 11, color: '#6f9c80', letterSpacing: 1, marginRight: 4 }}>SHORTCUTS</span>
             {chips.map((chip) => (
               <button
-                key={chip}
-                onClick={() => runCommand(chip)}
+                key={chip.label}
+                onClick={() => runCommand(chip.cmd, '~')}
                 className="dc-chip"
                 style={{
                   fontFamily: MONO,
@@ -394,7 +471,7 @@ export default function App() {
                   borderRadius: 3,
                 }}
               >
-                {chip}
+                {chip.label}
               </button>
             ))}
           </div>
@@ -403,7 +480,20 @@ export default function App() {
 
       {/* ================= GUI MODE ================= */}
       {mode === 'gui' && (
-        <div style={{ position: 'relative', zIndex: 1, background: '#060807', minHeight: '100vh' }}>
+        <div
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            background: th.bg,
+            minHeight: '100vh',
+            // CSS vars consumed by the :hover rules in styles.css so hovers theme too.
+            '--accent': th.accent,
+            '--accent-bright': th.accentBright,
+            '--on-accent': th.onAccent,
+            '--surface-hover': th.surfaceHover,
+            '--border-accent': th.borderAccent,
+          }}
+        >
           {/* nav */}
           <header
             style={{
@@ -411,8 +501,8 @@ export default function App() {
               top: 0,
               zIndex: 30,
               backdropFilter: 'blur(10px)',
-              background: 'rgba(5,8,6,.82)',
-              borderBottom: '1px solid #14241a',
+              background: th.navBg,
+              borderBottom: '1px solid ' + th.border,
             }}
           >
             <div
@@ -428,8 +518,8 @@ export default function App() {
                 gap: isMobile ? 10 : 20,
               }}
             >
-              <div style={{ fontFamily: MONO, fontSize: isMobile ? 13 : 14, letterSpacing: '1.5px', color: '#eafff0' }}>
-                JAZIB&nbsp;MALIK <span style={{ color: '#1c7a3c' }}>/ swe</span>
+              <div style={{ fontFamily: MONO, fontSize: isMobile ? 13 : 14, letterSpacing: '1.5px', color: th.heading }}>
+                JAZIB&nbsp;MALIK <span style={{ color: th.dim }}>/ swe</span>
               </div>
               <nav
                 style={{
@@ -443,7 +533,7 @@ export default function App() {
                 }}
               >
                 {['about', 'work', 'skills', 'experience', 'education', 'certs', 'honors'].map((id) => (
-                  <a key={id} href={'#' + id} className="dc-navlink" style={{ color: '#6f9c80', textDecoration: 'none' }}>
+                  <a key={id} href={'#' + id} className="dc-navlink" style={{ color: th.muted, textDecoration: 'none' }}>
                     {id}
                   </a>
                 ))}
@@ -453,9 +543,9 @@ export default function App() {
                   style={{
                     fontFamily: MONO,
                     fontSize: 12,
-                    color: '#2fd968',
+                    color: th.accent,
                     background: 'transparent',
-                    border: '1px solid #2a5a38',
+                    border: '1px solid ' + th.borderAccent,
                     padding: '6px 13px',
                     borderRadius: 3,
                     cursor: 'pointer',
@@ -467,7 +557,7 @@ export default function App() {
             </div>
           </header>
 
-          <main style={{ maxWidth: 1180, margin: '0 auto', padding: isMobile ? '0 16px' : '0 28px' }}>
+          <main className={settings.readable ? 'readable' : undefined} style={{ maxWidth: 1180, margin: '0 auto', padding: isMobile ? '0 16px' : '0 28px' }}>
             {/* hero */}
             <section
               style={{
@@ -479,7 +569,7 @@ export default function App() {
               }}
             >
               <div>
-                <div style={{ fontFamily: MONO, color: '#1c7a3c', fontSize: isMobile ? 10.5 : 12, letterSpacing: isMobile ? '1.5px' : '2.5px', marginBottom: isMobile ? 16 : 22 }}>
+                <div style={{ fontFamily: MONO, color: th.dim, fontSize: isMobile ? 10.5 : 12, letterSpacing: isMobile ? '1.5px' : '2.5px', marginBottom: isMobile ? 16 : 22 }}>
                   // FULL-STACK&nbsp;SOFTWARE&nbsp;ENGINEER · CS&nbsp;@&nbsp;VIRGINIA&nbsp;TECH
                 </div>
                 <h1
@@ -490,14 +580,14 @@ export default function App() {
                     lineHeight: 0.96,
                     margin: 0,
                     minHeight: '1.92em', // reserve two lines so the typing name doesn't shift layout
-                    color: '#eafff0',
+                    color: th.heading,
                     letterSpacing: isMobile ? '-1.5px' : '-2.5px',
                   }}
                 >
                   {renderName(heroName.shown)}
-                  <span style={{ color: '#2fd968', animation: 'blink 1.1s step-end infinite' }}>_</span>
+                  <span style={{ color: th.accent, animation: 'blink 1.1s step-end infinite' }}>_</span>
                 </h1>
-                <p style={{ fontFamily: GROTESK, fontSize: isMobile ? 17 : 20, lineHeight: 1.5, color: '#9fd3b0', maxWidth: 460, margin: isMobile ? '20px 0 0' : '26px 0 0' }}>
+                <p style={{ fontFamily: GROTESK, fontSize: isMobile ? 17 : 20, lineHeight: 1.5, color: th.text, maxWidth: 460, margin: isMobile ? '20px 0 0' : '26px 0 0' }}>
                   I build full-stack applications from idea to deployment, combining modern web technologies with scalable backend systems and cloud infrastructure.
                 </p>
                 <div style={{ display: 'flex', gap: 13, marginTop: 34, flexWrap: 'wrap' }}>
@@ -508,8 +598,8 @@ export default function App() {
                       fontFamily: MONO,
                       fontSize: 13,
                       textDecoration: 'none',
-                      background: '#2fd968',
-                      color: '#04140a',
+                      background: th.accent,
+                      color: th.onAccent,
                       fontWeight: 700,
                       padding: '13px 22px',
                       borderRadius: 3,
@@ -524,8 +614,8 @@ export default function App() {
                       fontFamily: MONO,
                       fontSize: 13,
                       background: 'transparent',
-                      color: '#2fd968',
-                      border: '1px solid #2a5a38',
+                      color: th.accent,
+                      border: '1px solid ' + th.borderAccent,
                       padding: '13px 22px',
                       borderRadius: 3,
                       cursor: 'pointer',
@@ -542,10 +632,10 @@ export default function App() {
                     marginTop: 30,
                     fontFamily: MONO,
                     fontSize: 12,
-                    color: '#6f9c80',
+                    color: th.muted,
                   }}
                 >
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#2fd968', boxShadow: '0 0 8px #2fd968', display: 'inline-block' }} />
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: th.accent, boxShadow: '0 0 8px ' + th.accent, display: 'inline-block' }} />
                   open to software engineering internships
                 </div>
               </div>
@@ -553,10 +643,10 @@ export default function App() {
               {/* mini terminal card */}
               <div
                 style={{
-                  border: '1px solid #16331f',
+                  border: '1px solid ' + th.borderMid,
                   borderRadius: 6,
                   overflow: 'hidden',
-                  background: '#000810',
+                  background: th.termBg,
                   boxShadow: '0 24px 60px rgba(0,0,0,.5)',
                 }}
               >
@@ -566,48 +656,48 @@ export default function App() {
                     alignItems: 'center',
                     gap: 7,
                     padding: '10px 13px',
-                    background: '#0a0f0b',
-                    borderBottom: '1px solid #16331f',
+                    background: th.surface,
+                    borderBottom: '1px solid ' + th.borderMid,
                   }}
                 >
                   <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#e8604a', display: 'inline-block' }} />
                   <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#e0b341', display: 'inline-block' }} />
-                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#2fd968', display: 'inline-block' }} />
-                  <span style={{ flex: 1, textAlign: 'center', fontFamily: MONO, fontSize: 11, color: '#6f9c80' }}>~/whoami</span>
+                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#27c93f', display: 'inline-block' }} />
+                  <span style={{ flex: 1, textAlign: 'center', fontFamily: MONO, fontSize: 11, color: th.muted }}>~/whoami</span>
                 </div>
-                <div style={{ padding: 20, fontFamily: MONO, fontSize: 13, lineHeight: 1.85, textShadow: '0 0 6px rgba(60,255,120,.35)' }}>
+                <div style={{ padding: 20, fontFamily: MONO, fontSize: 13, lineHeight: 1.85, textShadow: th.termGlow }}>
                   <div>
-                    <span style={{ color: '#74ffa6' }}>jazib@ctf:~$</span> <span style={{ color: '#cfeedb' }}>whoami</span>
+                    <span style={{ color: th.accentBright }}>jazib@ctf:~$</span> <span style={{ color: th.bright }}>whoami</span>
                   </div>
-                  <div style={{ color: '#2fd968' }}>jazib_malik</div>
+                  <div style={{ color: th.accent }}>jazib_malik</div>
                   <div>
-                    <span style={{ color: '#74ffa6' }}>jazib@ctf:~$</span> <span style={{ color: '#cfeedb' }}>cat role.txt</span>
+                    <span style={{ color: th.accentBright }}>jazib@ctf:~$</span> <span style={{ color: th.bright }}>cat role.txt</span>
                   </div>
-                  <div style={{ color: '#2fd968' }}>full-stack software engineer</div>
+                  <div style={{ color: th.accent }}>full-stack software engineer</div>
                   <div>
-                    <span style={{ color: '#74ffa6' }}>jazib@ctf:~$</span> <span style={{ color: '#cfeedb' }}>npm run deploy</span>
+                    <span style={{ color: th.accentBright }}>jazib@ctf:~$</span> <span style={{ color: th.bright }}>npm run deploy</span>
                   </div>
-                  <div style={{ color: '#9fd3b0' }}>
-                    [+] build passed · <span style={{ color: '#2fd968' }}>shipped to production ✓</span>
+                  <div style={{ color: th.text }}>
+                    [+] build passed · <span style={{ color: th.accent }}>shipped to production ✓</span>
                   </div>
                   <div>
-                    <span style={{ color: '#74ffa6' }}>jazib@ctf:~$</span>{' '}
-                    <span style={{ background: '#2fd968', color: '#000', animation: 'blink 1.1s step-end infinite' }}>&nbsp;</span>
+                    <span style={{ color: th.accentBright }}>jazib@ctf:~$</span>{' '}
+                    <span style={{ background: th.accent, color: th.onAccent, animation: 'blink 1.1s step-end infinite' }}>&nbsp;</span>
                   </div>
                 </div>
               </div>
             </section>
 
             {/* about */}
-            <section id="about" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid #14241a' }}>
-              <SectionLabel text="01 / ABOUT" />
+            <section id="about" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid ' + th.border }}>
+              <SectionLabel text="01 / ABOUT" th={th} />
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.2fr', gap: isMobile ? 18 : 50 }}>
                 <h2
                   style={{
                     fontFamily: GROTESK,
                     fontSize: isMobile ? 28 : 38,
                     fontWeight: 600,
-                    color: '#eafff0',
+                    color: th.heading,
                     lineHeight: 1.1,
                     margin: 0,
                     letterSpacing: '-1px',
@@ -618,7 +708,7 @@ export default function App() {
                   end to end.
                 </h2>
                 <div>
-                  <p style={{ fontFamily: GROTESK, fontSize: isMobile ? 16 : 18, lineHeight: 1.7, color: '#9fd3b0', margin: '0 0 22px' }}>
+                  <p style={{ fontFamily: GROTESK, fontSize: isMobile ? 16 : 18, lineHeight: 1.7, color: th.text, margin: '0 0 22px' }}>
                     {aboutProse}
                   </p>
                   <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
@@ -628,8 +718,8 @@ export default function App() {
                         style={{
                           fontFamily: MONO,
                           fontSize: 12,
-                          color: '#2fd968',
-                          border: '1px solid #16331f',
+                          color: th.accent,
+                          border: '1px solid ' + th.borderMid,
                           padding: '5px 11px',
                           borderRadius: 3,
                         }}
@@ -643,8 +733,8 @@ export default function App() {
             </section>
 
             {/* work */}
-            <section id="work" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid #14241a' }}>
-              <SectionLabel text="02 / SELECTED&nbsp;WORK" />
+            <section id="work" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid ' + th.border }}>
+              <SectionLabel text="02 / SELECTED&nbsp;WORK" th={th} />
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 14 : 20 }}>
                 {projectsView.map((p) => (
                   <a
@@ -656,8 +746,8 @@ export default function App() {
                     style={{
                       display: 'block',
                       textDecoration: 'none',
-                      background: '#0a0f0b',
-                      border: '1px solid #14241a',
+                      background: th.surface,
+                      border: '1px solid ' + th.border,
                       borderRadius: 4,
                       padding: isMobile ? 22 : 28,
                       transition: 'transform .18s,border-color .18s,background .18s',
@@ -670,7 +760,7 @@ export default function App() {
                         alignItems: 'center',
                         fontFamily: MONO,
                         fontSize: 12,
-                        color: '#1c7a3c',
+                        color: th.dim,
                         marginBottom: 20,
                       }}
                     >
@@ -679,8 +769,8 @@ export default function App() {
                         {p.isInProgress && (
                           <span
                             style={{
-                              color: '#e0b341',
-                              border: '1px solid #5a4a18',
+                              color: th.warn,
+                              border: '1px solid ' + th.warnBorder,
                               borderRadius: 2,
                               padding: '2px 7px',
                               fontSize: 10,
@@ -691,10 +781,10 @@ export default function App() {
                           </span>
                         )}
                       </span>
-                      <span style={{ color: '#2fd968' }}>↗</span>
+                      <span style={{ color: th.accent }}>↗</span>
                     </div>
-                    <h3 style={{ fontFamily: GROTESK, fontSize: isMobile ? 22 : 25, fontWeight: 600, color: '#eafff0', margin: '0 0 11px' }}>{p.name}</h3>
-                    <p style={{ fontFamily: GROTESK, fontSize: 15, lineHeight: 1.55, color: '#8fbf9f', margin: '0 0 20px' }}>{p.desc}</p>
+                    <h3 style={{ fontFamily: GROTESK, fontSize: isMobile ? 22 : 25, fontWeight: 600, color: th.heading, margin: '0 0 11px' }}>{p.name}</h3>
+                    <p style={{ fontFamily: GROTESK, fontSize: 15, lineHeight: 1.55, color: th.textSoft, margin: '0 0 20px' }}>{p.desc}</p>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {p.tags.map((t) => (
                         <span
@@ -702,8 +792,8 @@ export default function App() {
                           style={{
                             fontFamily: MONO,
                             fontSize: 11,
-                            color: '#2fd968',
-                            border: '1px solid #16331f',
+                            color: th.accent,
+                            border: '1px solid ' + th.borderMid,
                             padding: '3px 9px',
                             borderRadius: 2,
                           }}
@@ -718,12 +808,12 @@ export default function App() {
             </section>
 
             {/* skills */}
-            <section id="skills" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid #14241a' }}>
-              <SectionLabel text="03 / TOOLKIT" />
+            <section id="skills" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid ' + th.border }}>
+              <SectionLabel text="03 / TOOLKIT" th={th} />
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 14 : 20 }}>
                 {skillGroups.map((g) => (
-                  <div key={g.title} style={{ border: '1px solid #14241a', borderRadius: 4, padding: 26, background: '#0a0f0b' }}>
-                    <div style={{ fontFamily: MONO, fontSize: 13, color: '#74ffa6', marginBottom: 18, letterSpacing: '.5px' }}>
+                  <div key={g.title} style={{ border: '1px solid ' + th.border, borderRadius: 4, padding: 26, background: th.surface }}>
+                    <div style={{ fontFamily: MONO, fontSize: 13, color: th.accentBright, marginBottom: 18, letterSpacing: '.5px' }}>
                       [ {g.title} ]
                     </div>
                     <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
@@ -733,9 +823,9 @@ export default function App() {
                           style={{
                             fontFamily: MONO,
                             fontSize: 13,
-                            color: '#2fd968',
-                            background: 'rgba(20,40,24,.4)',
-                            border: '1px solid #16331f',
+                            color: th.accent,
+                            background: th.chipBg,
+                            border: '1px solid ' + th.borderMid,
                             padding: '5px 11px',
                             borderRadius: 3,
                           }}
@@ -750,53 +840,53 @@ export default function App() {
             </section>
 
             {/* experience */}
-            <section id="experience" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid #14241a' }}>
-              <SectionLabel text="04 / EXPERIENCE" tight />
+            <section id="experience" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid ' + th.border }}>
+              <SectionLabel text="04 / EXPERIENCE" tight th={th} />
               {experience.map((e) => (
-                <TimelineRow key={e.role + e.year} e={e} isMobile={isMobile} />
+                <TimelineRow key={e.role + e.year} e={e} isMobile={isMobile} th={th} />
               ))}
             </section>
 
             {/* education */}
-            <section id="education" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid #14241a' }}>
-              <SectionLabel text="05 / EDUCATION" tight />
+            <section id="education" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid ' + th.border }}>
+              <SectionLabel text="05 / EDUCATION" tight th={th} />
               {education.map((e) => (
-                <TimelineRow key={e.role + e.year} e={e} isMobile={isMobile} />
+                <TimelineRow key={e.role + e.year} e={e} isMobile={isMobile} th={th} />
               ))}
             </section>
 
             {/* certs */}
-            <section id="certs" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid #14241a' }}>
-              <SectionLabel text="06 / CERTIFICATIONS" />
+            <section id="certs" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid ' + th.border }}>
+              <SectionLabel text="06 / CERTIFICATIONS" th={th} />
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(auto-fit,minmax(190px,1fr))', gap: isMobile ? 12 : 18 }}>
                 {certs.map((c) => (
                   <div
                     key={c.code}
                     className="dc-cert-card"
-                    style={{ background: '#0a0f0b', border: '1px solid #14241a', borderRadius: 4, padding: isMobile ? '22px 14px' : '30px 22px', textAlign: 'center' }}
+                    style={{ background: th.surface, border: '1px solid ' + th.border, borderRadius: 4, padding: isMobile ? '22px 14px' : '30px 22px', textAlign: 'center' }}
                   >
                     <div
                       style={{
                         fontFamily: GROTESK,
                         fontSize: isMobile ? 24 : 30,
                         fontWeight: 700,
-                        color: '#2fd968',
-                        textShadow: '0 0 16px rgba(47,217,104,.4)',
+                        color: th.accent,
+                        textShadow: th.certGlow,
                         marginBottom: 9,
                         letterSpacing: '.5px',
                       }}
                     >
                       {c.code}
                     </div>
-                    <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.5, color: '#8fbf9f' }}>{c.name}</div>
+                    <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.5, color: th.textSoft }}>{c.name}</div>
                   </div>
                 ))}
               </div>
             </section>
 
             {/* honors */}
-            <section id="honors" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid #14241a' }}>
-              <SectionLabel text="07 / HONORS&nbsp;&amp;&nbsp;AWARDS" />
+            <section id="honors" style={{ padding: isMobile ? '40px 0' : '64px 0', borderTop: '1px solid ' + th.border }}>
+              <SectionLabel text="07 / HONORS&nbsp;&amp;&nbsp;AWARDS" th={th} />
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 14 }}>
                 {honors.map((h) => (
                   <div
@@ -806,28 +896,28 @@ export default function App() {
                       display: 'flex',
                       alignItems: 'center',
                       gap: 13,
-                      background: '#0a0f0b',
-                      border: '1px solid #14241a',
+                      background: th.surface,
+                      border: '1px solid ' + th.border,
                       borderRadius: 4,
                       padding: '20px 22px',
                     }}
                   >
-                    <span style={{ color: '#2fd968', fontSize: 18, textShadow: '0 0 12px rgba(47,217,104,.5)' }}>★</span>
-                    <span style={{ fontFamily: MONO, fontSize: 14, lineHeight: 1.45, color: '#cfeedb' }}>{h}</span>
+                    <span style={{ color: th.accent, fontSize: 18, textShadow: th.starGlow }}>★</span>
+                    <span style={{ fontFamily: MONO, fontSize: 14, lineHeight: 1.45, color: th.bright }}>{h}</span>
                   </div>
                 ))}
               </div>
             </section>
 
             {/* contact */}
-            <section id="contact" style={{ padding: isMobile ? '46px 0 32px' : '80px 0 40px', borderTop: '1px solid #14241a' }}>
-              <SectionLabel text="08 / CONTACT" half />
+            <section id="contact" style={{ padding: isMobile ? '46px 0 32px' : '80px 0 40px', borderTop: '1px solid ' + th.border }}>
+              <SectionLabel text="08 / CONTACT" half th={th} />
               <h2
                 style={{
                   fontFamily: GROTESK,
                   fontSize: isMobile ? 36 : 60,
                   fontWeight: 700,
-                  color: '#eafff0',
+                  color: th.heading,
                   lineHeight: 1,
                   margin: isMobile ? '0 0 26px' : '0 0 40px',
                   letterSpacing: isMobile ? '-1px' : '-2px',
@@ -837,7 +927,7 @@ export default function App() {
                 <br />
                 something.
               </h2>
-              <div style={{ borderBottom: '1px solid #14241a' }}>
+              <div style={{ borderBottom: '1px solid ' + th.border }}>
                 {socials.map((s) => (
                   <a
                     key={s.label}
@@ -852,38 +942,38 @@ export default function App() {
                       alignItems: isMobile ? 'flex-start' : 'center',
                       gap: isMobile ? 3 : 0,
                       textDecoration: 'none',
-                      borderTop: '1px solid #14241a',
+                      borderTop: '1px solid ' + th.border,
                       padding: isMobile ? '16px 0' : '22px 0',
                       fontFamily: GROTESK,
                       fontSize: isMobile ? 19 : 24,
-                      color: '#cfeedb',
+                      color: th.bright,
                       transition: 'padding .18s,color .18s',
                     }}
                   >
                     <span>{s.label}</span>
-                    <span className="dc-social-meta" style={{ fontFamily: MONO, fontSize: isMobile ? 12 : 14, color: '#6f9c80', wordBreak: 'break-all' }}>
+                    <span className="dc-social-meta" style={{ fontFamily: MONO, fontSize: isMobile ? 12 : 14, color: th.muted, wordBreak: 'break-all' }}>
                       {s.display} ↗
                     </span>
                   </a>
                 ))}
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14, marginTop: 34 }}>
-                <div style={{ fontFamily: MONO, fontSize: 12, color: '#6f9c80' }}>built in the terminal · © 2026</div>
+                <div style={{ fontFamily: MONO, fontSize: 12, color: th.muted }}>built in the terminal · © 2026</div>
                 <button
                   onClick={goTerminal}
                   className="dc-term-btn"
                   style={{
                     fontFamily: MONO,
                     fontSize: 12,
-                    color: '#2fd968',
+                    color: th.accent,
                     background: 'transparent',
-                    border: '1px solid #2a5a38',
+                    border: '1px solid ' + th.borderAccent,
                     padding: '8px 15px',
                     borderRadius: 3,
                     cursor: 'pointer',
                   }}
                 >
-                  ▸ back to terminal
+                  ▸ open terminal
                 </button>
               </div>
             </section>
@@ -892,7 +982,7 @@ export default function App() {
       )}
 
       {/* ================= CRT OVERLAYS ================= */}
-      {CONFIG.scanlines && (
+      {settings.scanlines && (
         <>
           <div
             style={{
@@ -915,7 +1005,7 @@ export default function App() {
           />
         </>
       )}
-      {CONFIG.flicker && (
+      {settings.flicker && (
         <>
           <div
             style={{
@@ -943,27 +1033,165 @@ export default function App() {
           />
         </>
       )}
+
+      {/* ================= DISPLAY SETTINGS ================= */}
+      <SettingsPanel
+        open={settingsOpen}
+        onToggleOpen={() => setSettingsOpen((o) => !o)}
+        settings={settings}
+        setSettings={setSettings}
+        th={th}
+      />
+    </div>
+  )
+}
+
+// Floating gear (bottom-right) + popover with theme switch and display toggles.
+function SettingsPanel({ open, onToggleOpen, settings, setSettings, th }) {
+  const rows = [
+    ['scanlines', 'Scanlines'],
+    ['flicker', 'Screen flicker'],
+    ['glow', 'Text glow'],
+    ['readable', 'Readable colors'],
+  ]
+  const flip = (key) => setSettings((s) => ({ ...s, [key]: !s[key] }))
+  // Switching theme also flips the CRT effects to sensible defaults for that look.
+  const pickTheme = (theme) =>
+    setSettings((s) =>
+      theme === 'pro'
+        ? { ...s, theme, scanlines: false, flicker: false, glow: false }
+        : { ...s, theme, scanlines: true, flicker: true, glow: true }
+    )
+  return (
+    <div style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 80, fontFamily: MONO }}>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            right: 0,
+            bottom: 52,
+            width: 232,
+            background: th.surface,
+            border: '1px solid ' + th.borderAccent,
+            borderRadius: 8,
+            padding: '12px 14px',
+            boxShadow: '0 18px 50px rgba(0,0,0,.6)',
+          }}
+        >
+          <div style={{ fontSize: 11, letterSpacing: 1.5, color: th.muted, marginBottom: 8 }}>THEME</div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+            {Object.entries(THEMES).map(([key, t]) => {
+              const active = settings.theme === key
+              return (
+                <button
+                  key={key}
+                  onClick={() => pickTheme(key)}
+                  style={{
+                    flex: 1,
+                    fontFamily: MONO,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    padding: '7px 6px',
+                    borderRadius: 5,
+                    color: active ? th.onAccent : th.text,
+                    background: active ? th.accent : 'transparent',
+                    border: '1px solid ' + (active ? th.accent : th.borderAccent),
+                  }}
+                >
+                  {t.label}
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ fontSize: 11, letterSpacing: 1.5, color: th.muted, marginBottom: 10 }}>DISPLAY</div>
+          {rows.map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => flip(key)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '7px 0',
+                fontFamily: MONO,
+                fontSize: 13,
+                color: th.bright,
+              }}
+            >
+              <span>{label}</span>
+              <span
+                style={{
+                  width: 34,
+                  height: 18,
+                  borderRadius: 10,
+                  background: settings[key] ? th.accent : 'transparent',
+                  border: '1px solid ' + (settings[key] ? th.accent : th.borderAccent),
+                  position: 'relative',
+                  transition: 'background .15s',
+                  flexShrink: 0,
+                }}
+              >
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 1,
+                    left: settings[key] ? 17 : 1,
+                    width: 14,
+                    height: 14,
+                    borderRadius: '50%',
+                    background: settings[key] ? th.onAccent : th.accentBright,
+                    transition: 'left .15s',
+                  }}
+                />
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      <button
+        onClick={onToggleOpen}
+        aria-label="Display settings"
+        title="Display settings"
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: '50%',
+          background: th.surface,
+          border: '1px solid ' + th.borderAccent,
+          color: th.accent,
+          cursor: 'pointer',
+          fontSize: 19,
+          lineHeight: 1,
+          boxShadow: '0 10px 30px rgba(0,0,0,.5)',
+        }}
+      >
+        ⚙
+      </button>
     </div>
   )
 }
 
 // Section header: number label + trailing rule. `tight`/`half` match the
 // design's varying bottom margins (24px / 34px vs the default 40px).
-function SectionLabel({ text, tight, half }) {
+function SectionLabel({ text, tight, half, th }) {
   const mb = tight ? 24 : half ? 34 : 40
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: mb }}>
       <span
-        style={{ fontFamily: MONO, fontSize: 12, color: '#2fd968', letterSpacing: '1px' }}
+        style={{ fontFamily: MONO, fontSize: 12, color: th.accent, letterSpacing: '1px' }}
         dangerouslySetInnerHTML={{ __html: text }}
       />
-      <span style={{ flex: 1, height: 1, background: '#14241a' }} />
+      <span style={{ flex: 1, height: 1, background: th.border }} />
     </div>
   )
 }
 
 // Shared row for the Experience and Education timelines.
-function TimelineRow({ e, isMobile }) {
+function TimelineRow({ e, isMobile, th }) {
   return (
     <div
       style={{
@@ -971,18 +1199,18 @@ function TimelineRow({ e, isMobile }) {
         gridTemplateColumns: isMobile ? '1fr' : '170px 1fr',
         gap: isMobile ? 6 : 28,
         padding: isMobile ? '20px 0' : '26px 0',
-        borderTop: '1px solid #14241a',
+        borderTop: '1px solid ' + th.border,
         alignItems: 'start',
       }}
     >
-      <div style={{ fontFamily: MONO, fontSize: isMobile ? 12.5 : 14, color: '#2fd968', paddingTop: isMobile ? 0 : 4, letterSpacing: isMobile ? '.5px' : 0 }}>
+      <div style={{ fontFamily: MONO, fontSize: isMobile ? 12.5 : 14, color: th.accent, paddingTop: isMobile ? 0 : 4, letterSpacing: isMobile ? '.5px' : 0 }}>
         {e.year}
       </div>
       <div>
-        <div style={{ fontFamily: GROTESK, fontSize: isMobile ? 19 : 22, fontWeight: 600, color: '#eafff0', marginBottom: 4 }}>
-          {e.role} <span style={{ color: '#1c7a3c', fontSize: isMobile ? 14 : 16, fontWeight: 400 }}>@ {e.org}</span>
+        <div style={{ fontFamily: GROTESK, fontSize: isMobile ? 19 : 22, fontWeight: 600, color: th.heading, marginBottom: 4 }}>
+          {e.role} <span style={{ color: th.dim, fontSize: isMobile ? 14 : 16, fontWeight: 400 }}>@ {e.org}</span>
         </div>
-        <div style={{ fontFamily: GROTESK, fontSize: isMobile ? 15 : 16, lineHeight: 1.6, color: '#8fbf9f' }}>{e.desc}</div>
+        <div style={{ fontFamily: GROTESK, fontSize: isMobile ? 15 : 16, lineHeight: 1.6, color: th.textSoft }}>{e.desc}</div>
       </div>
     </div>
   )

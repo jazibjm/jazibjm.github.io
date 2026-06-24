@@ -15,6 +15,12 @@ const notfound = (msg) =>
   msg +
   '</span><br><span style="color:#9fd3b0">Type </span><span style="color:#74ffa6">help</span><span style="color:#9fd3b0"> for a list of commands.</span>'
 
+// ---- virtual filesystem -------------------------------------------------
+// Home (~) holds flat files plus a single `projects/` directory. Each project
+// is its own `.txt` file inside it, so you can `cd projects` and `cat` them.
+const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+const projectFiles = projects.map((p) => ({ name: slugify(p.name) + '.txt', project: p }))
+
 function out_help() {
   const rows = [
     ['about', 'who I am'],
@@ -25,7 +31,9 @@ function out_help() {
     ['certs', 'certifications'],
     ['honors', 'awards & recognition'],
     ['contact', 'links & email'],
-    ['ls', 'list files'],
+    ['ls', 'list files in the current directory'],
+    ['cd &lt;dir&gt;', 'change directory — try: cd projects'],
+    ['cat &lt;file&gt;', 'print a file — try: cat projects/*.txt'],
     ['clear', 'clear the screen'],
     ['gui', 'launch graphical portfolio'],
   ]
@@ -64,26 +72,27 @@ function out_skills() {
   return '<div style="line-height:1.7">' + body + '</div>'
 }
 
+// One project block — shared by `projects` and per-file `cat`.
+function projectBlock(p, i) {
+  return (
+    '<div style="margin-bottom:16px;line-height:1.6"><div><span style="color:#1c7a3c">[' +
+    String(i + 1).padStart(2, '0') +
+    ']</span> <span style="color:#74ffa6;font-weight:700">' +
+    p.name +
+    '</span>' +
+    (p.status ? ' <span style="color:#e0b341">[' + p.status + ']</span>' : '') +
+    ' <span style="color:#1c7a3c">— ' +
+    p.tags.join(' · ') +
+    '</span></div><div style="color:#9fd3b0;padding-left:38px">' +
+    p.desc +
+    '</div><div style="color:#1c7a3c;padding-left:38px">↳ ' +
+    p.link +
+    '</div></div>'
+  )
+}
+
 function out_projects() {
-  const body = projects
-    .map(
-      (p, i) =>
-        '<div style="margin-bottom:16px;line-height:1.6"><div><span style="color:#1c7a3c">[' +
-        String(i + 1).padStart(2, '0') +
-        ']</span> <span style="color:#74ffa6;font-weight:700">' +
-        p.name +
-        '</span>' +
-        (p.status ? ' <span style="color:#e0b341">[' + p.status + ']</span>' : '') +
-        ' <span style="color:#1c7a3c">— ' +
-        p.tags.join(' · ') +
-        '</span></div><div style="color:#9fd3b0;padding-left:38px">' +
-        p.desc +
-        '</div><div style="color:#1c7a3c;padding-left:38px">↳ ' +
-        p.link +
-        '</div></div>'
-    )
-    .join('')
-  return '<div>' + body + '</div>'
+  return '<div>' + projects.map(projectBlock).join('') + '</div>'
 }
 
 function out_exp() {
@@ -167,8 +176,7 @@ function out_contact() {
   return '<div style="line-height:1.6">' + body + '</div>'
 }
 
-function out_ls() {
-  const files = ['about.txt', 'projects/', 'skills.txt', 'experience.log', 'education.txt', 'certs.md', 'contact.txt']
+function fileList(files) {
   return (
     '<div style="display:flex;gap:22px;flex-wrap:wrap">' +
     files
@@ -185,22 +193,99 @@ function out_ls() {
   )
 }
 
-// Returns { html } for a normal command, or { goGui: true } to trigger the GUI boot.
-export function commandOutput(cmd) {
+function out_ls(cwd) {
+  if (cwd === 'projects') return fileList(projectFiles.map((f) => f.name))
+  return fileList([
+    'about.txt',
+    'projects/',
+    'skills.txt',
+    'experience.log',
+    'education.txt',
+    'certs.md',
+    'honors.txt',
+    'contact.txt',
+  ])
+}
+
+// Flat home files → their renderer.
+const homeFiles = {
+  'about.txt': out_about,
+  'skills.txt': out_skills,
+  'experience.log': out_exp,
+  'education.txt': out_education,
+  'certs.md': out_certs,
+  'honors.txt': out_awards,
+  'contact.txt': out_contact,
+}
+
+// Fuzzy fallback so `cat about` works as well as `cat about.txt`.
+function fuzzyHome(name) {
+  const n = name.replace(/\.[a-z]+$/, '')
+  if (n.includes('about')) return out_about()
+  if (n.includes('skill')) return out_skills()
+  if (n.includes('exp')) return out_exp()
+  if (n.includes('edu')) return out_education()
+  if (n.includes('cert')) return out_certs()
+  if (n.includes('honor') || n.includes('award')) return out_awards()
+  if (n.includes('contact')) return out_contact()
+  return null
+}
+
+function catProject(token) {
+  const t = token.replace(/\.txt$/, '')
+  const pf =
+    projectFiles.find((f) => f.name.replace(/\.txt$/, '') === t) ||
+    projectFiles.find((f) => f.name.replace(/\.txt$/, '').includes(t))
+  if (pf) return '<div>' + projectBlock(pf.project, projects.indexOf(pf.project)) + '</div>'
+  return null
+}
+
+function out_cat(arg, cwd) {
+  if (!arg) return notfound('cat: missing file operand')
+  const a = arg.replace(/^\.\//, '')
+
+  // The projects directory itself is not a file.
+  if (a === 'projects' && cwd !== 'projects') return notfound('cat: projects: Is a directory')
+
+  // Resolve a reference into the projects directory.
+  let projTarget = null
+  if (a.startsWith('projects/')) projTarget = a.slice('projects/'.length)
+  else if (cwd === 'projects' && !a.startsWith('../')) projTarget = a
+
+  if (projTarget !== null) {
+    if (projTarget === '' || projTarget === '*' || projTarget === '*.txt') return out_projects()
+    const hit = catProject(projTarget)
+    if (hit) return hit
+    return notfound('cat: ' + arg + ': No such file or directory')
+  }
+
+  // Home files (reachable from projects via ../name too).
+  const home = a.replace(/^\.\.\//, '')
+  if (homeFiles[home]) return homeFiles[home]()
+  const fuzzy = fuzzyHome(home)
+  if (fuzzy) return fuzzy
+
+  return notfound('cat: ' + arg + ': No such file or directory')
+}
+
+function out_cd(arg, cwd) {
+  const a = (arg || '~').replace(/\/+$/, '')
+  if (a === '' || a === '~' || a === '/' || a === '..' || a === '~/') return { cd: '~' }
+  if (a === 'projects' || a === './projects' || a === '~/projects') {
+    if (cwd === 'projects') return { html: notfound('cd: projects: No such file or directory') }
+    return { cd: 'projects' }
+  }
+  return { html: notfound('cd: ' + arg + ': No such file or directory') }
+}
+
+// Returns { html } for normal output, { cd } to change directory, or
+// { goGui } (handled in App). `cwd` is '~' or 'projects'.
+export function commandOutput(cmd, cwd = '~') {
   const parts = cmd.split(/\s+/)
   const base = parts[0]
   if (base === 'echo') return { html: '<span style="color:#cfeedb">' + cmd.slice(5) + '</span>' }
-  if (base === 'cat') {
-    const f = parts[1] || ''
-    if (f.includes('about')) return { html: out_about() }
-    if (f.includes('skill')) return { html: out_skills() }
-    if (f.includes('project')) return { html: out_projects() }
-    if (f.includes('exp')) return { html: out_exp() }
-    if (f.includes('edu')) return { html: out_education() }
-    if (f.includes('cert')) return { html: out_certs() }
-    if (f.includes('contact')) return { html: out_contact() }
-    return { html: notfound('cat: ' + f + ': No such file or directory') }
-  }
+  if (base === 'cd') return out_cd(parts[1], cwd)
+  if (base === 'cat') return { html: out_cat(parts[1] || '', cwd) }
   switch (base) {
     case 'help':
     case '?':
@@ -233,9 +318,9 @@ export function commandOutput(cmd) {
     case 'links':
       return { html: out_contact() }
     case 'ls':
-      return { html: out_ls() }
+      return { html: out_ls(cwd) }
     case 'pwd':
-      return { html: '<span style="color:#9fd3b0">/home/jazib</span>' }
+      return { html: '<span style="color:#9fd3b0">/home/jazib' + (cwd === 'projects' ? '/projects' : '') + '</span>' }
     case 'date':
       return { html: '<span style="color:#9fd3b0">' + new Date().toString() + '</span>' }
     case 'sudo':

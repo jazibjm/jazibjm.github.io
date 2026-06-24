@@ -26,16 +26,29 @@ input::placeholder { color: #1c7a3c; }
 }
 
 
+/* Terminal-mode hovers stay green (terminal is always the green theme). */
 .dc-gui-btn:hover     { background: #16331f; color: #74ffa6; border-color: #2fd968; }
 .dc-chip:hover        { background: #16331f; color: #74ffa6; border-color: #2fd968; }
-.dc-navlink:hover     { color: #74ffa6; }
-.dc-term-btn:hover    { background: #2fd968; color: #04140a; border-color: #2fd968; }
-.dc-primary:hover     { background: #74ffa6; }
-.dc-open-btn:hover    { border-color: #2fd968; background: #0c1410; }
-.dc-proj-card:hover   { border-color: #2fd968; background: #0c1410; transform: translateY(-3px); }
-.dc-cert-card:hover   { border-color: #2fd968; }
-.dc-social:hover      { color: #2fd968; padding-left: 12px; }
-.dc-social:hover .dc-social-meta { color: #2fd968; }
+
+/* GUI hovers read the theme via CSS vars set on the GUI wrapper (fallback = green). */
+.dc-navlink:hover     { color: var(--accent-bright, #74ffa6); }
+.dc-term-btn:hover    { background: var(--accent, #2fd968); color: var(--on-accent, #04140a); border-color: var(--accent, #2fd968); }
+.dc-primary:hover     { background: var(--accent-bright, #74ffa6); }
+.dc-open-btn:hover    { border-color: var(--accent, #2fd968); background: var(--surface-hover, #0c1410); }
+.dc-proj-card:hover   { border-color: var(--accent, #2fd968); background: var(--surface-hover, #0c1410); transform: translateY(-3px); }
+.dc-cert-card:hover   { border-color: var(--accent, #2fd968); }
+.dc-social:hover      { color: var(--accent, #2fd968); padding-left: 12px; }
+.dc-social:hover .dc-social-meta { color: var(--accent, #2fd968); }
 
 /* Phosphor caret in the live prompt */
 .dc-prompt-input { caret-color: #2fd968; }
+
+/* ============================================================
+   Display-settings modes (toggled from the ⚙ panel)
+   ============================================================ */
+/* Kill the phosphor glow blur for sharper text. */
+.no-glow, .no-glow *,
+.readable, .readable * { text-shadow: none !important; }
+
+/* Brighten the dim greens and lift overall contrast for easier reading. */
+.readable { filter: brightness(1.18) saturate(1.06) contrast(1.03); }
