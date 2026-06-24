@@ -20,10 +20,22 @@ input::placeholder { color: #1c7a3c; }
   38%  { opacity: .06; } 46% { opacity: 0; }   62% { opacity: .03; } 74% { opacity: 0; }
   88%  { opacity: .05; } 100% { opacity: 0; }
 }
+@keyframes bootglow {
+  0%,100% { text-shadow: 0 0 8px rgba(60,255,120,.45); }
+  50%     { text-shadow: 0 0 14px rgba(60,255,120,.7); }
+}
+
+
+.dc-gui-btn:hover     { background: #16331f; color: #74ffa6; border-color: #2fd968; }
+.dc-chip:hover        { background: #16331f; color: #74ffa6; border-color: #2fd968; }
 .dc-navlink:hover     { color: #74ffa6; }
+.dc-term-btn:hover    { background: #2fd968; color: #04140a; border-color: #2fd968; }
 .dc-primary:hover     { background: #74ffa6; }
 .dc-open-btn:hover    { border-color: #2fd968; background: #0c1410; }
 .dc-proj-card:hover   { border-color: #2fd968; background: #0c1410; transform: translateY(-3px); }
 .dc-cert-card:hover   { border-color: #2fd968; }
 .dc-social:hover      { color: #2fd968; padding-left: 12px; }
 .dc-social:hover .dc-social-meta { color: #2fd968; }
+
+/* Phosphor caret in the live prompt */
+.dc-prompt-input { caret-color: #2fd968; }
