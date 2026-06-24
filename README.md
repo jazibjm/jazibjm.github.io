@@ -1,22 +1,7 @@
 # Jazib Malik — Portfolio
 
-A dual-mode personal portfolio. React + Vite, fully static, deploys to
+A personal portfolio. React + Vite, fully static, deploys to
 GitHub Pages / Netlify / Vercel with no backend.
-
-## Two modes (shared content)
-
-- **Terminal mode** — green-phosphor bash prompt with real commands
-  (`help`, `about`, `projects`, `skills`, `experience`, `education`, `certs`,
-  `contact`, `ls`, `cat <file>`, `whoami`, `awards`, `pwd`, `date`, `clear`,
-  `gui`, …). `↑/↓` recalls history; clickable shortcut chips run commands.
-  Full CRT treatment — scanlines, vignette, drifting glow, flicker, phosphor
-  text-shadow.
-  <img width="1853" height="1287" alt="image" src="https://github.com/user-attachments/assets/a83f5960-df23-46b2-b179-955cfd1330ca" />
-
-  
-- **GUI mode** (`gui` command or the GUI button) — a retro-computing portfolio:
-  hero, about, selected work, skills, experience, education, certifications,
-  contact. The chosen mode persists to `localStorage` (`jm_mode`).
   <img width="2063" height="1287" alt="image" src="https://github.com/user-attachments/assets/b4ad2e6e-37b5-4ba7-ab28-2d8052ac05d2" />
 
 
